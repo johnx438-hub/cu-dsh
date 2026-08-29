@@ -1,4 +1,4 @@
-"""HTTP MCP face. Must run on ARCHER. Bind a specific host, never 0.0.0.0."""
+"""HTTP MCP face. Machine-gated by config (machine.allowlist), never 0.0.0.0."""
 
 from io import BytesIO
 from pathlib import Path
@@ -16,15 +16,28 @@ def _nz_str(v: str):
 
 def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
     import json
+    import socket
     from mcp.server.fastmcp import FastMCP
     from mcp.server.fastmcp.utilities.types import Image
     from mcp.server.transport_security import TransportSecuritySettings
     from PIL import Image as PILImage
 
+    from . import config
     from .act import coerce_ids, load_frame, parse_steps, run_chain
     from .core import perceive
     from .launch import launch, list_apps
     from .windows import find_window, list_windows, windows_map
+
+    # M2: machine gate — refuse to run unless this host is allowlisted
+    # (config [machine] allowlist / CU_MACHINE_ALLOWLIST; empty = any host).
+    allowlist = config.machine_allowlist()
+    if allowlist:
+        hostname = socket.gethostname()
+        if hostname not in allowlist:
+            raise RuntimeError(
+                f"cu-dsh mcp refuses to run on host {hostname!r} "
+                f"(allowlist={allowlist}); set machine.allowlist in {config.config_file()}"
+            )
 
     def _thumb_image(map_path: str) -> Image:
         im = PILImage.open(map_path)
@@ -46,21 +59,24 @@ def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
             return [text, _thumb_image(map_path)]
         return text
 
-    ts_host = "archer.tailca07d9.ts.net"
+    ts_host = config.tailscale_host()
+    allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    allowed_origins = [
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+        "http://[::1]:*",
+    ]
+    if ts_host:
+        allowed_hosts += [f"{ts_host}:*", ts_host]
+        allowed_origins += [f"https://{ts_host}:*", f"https://{ts_host}"]
     app = FastMCP(
         "cu-dsh",
         host=host,
         port=port,
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
-            allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", f"{ts_host}:*", ts_host],
-            allowed_origins=[
-                "http://127.0.0.1:*",
-                "http://localhost:*",
-                "http://[::1]:*",
-                f"https://{ts_host}:*",
-                f"https://{ts_host}",
-            ],
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
         ),
     )
     app.settings.host = host

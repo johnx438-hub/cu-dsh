@@ -16,8 +16,12 @@ import os
 import subprocess
 import sys
 
-CHECKOUT = "/home/archer/zerostack-analysis/minimal-agent-ts"
-NVM_BIN = "/home/archer/.nvm/versions/node/v24.14.1/bin"
+CHECKOUT = os.environ.get(
+    "CU_WSL_CHECKOUT", "/home/archer/zerostack-analysis/minimal-agent-ts"
+)
+NVM_BIN = os.environ.get(
+    "CU_WSL_NVM_BIN", "/home/archer/.nvm/versions/node/v24.14.1/bin"
+)
 HOUSE = os.environ.get("DSH_INBOX_HOUSE", "dsh-local")
 TRUST = os.environ.get("DSH_INBOX_TRUST", "dogfood-trust")
 FROM = os.environ.get("INBOX_FROM", "cu-dsh")

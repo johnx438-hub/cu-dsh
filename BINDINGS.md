@@ -37,14 +37,18 @@
 `tests/test_config.py`（6 个用例，env 覆盖 / 引号剥离 / 合并 / 容错 dump，
 Linux 可跑，不依赖 Windows）。
 
-## 2. 机器 / 用户绑定
+## 2. 机器 / 用户绑定 — ✅ M2 已落地（2026-08-29）
 
-| # | 绑定 | 出现位置 | 修复方向 |
+统一收敛到 `~/.config/cu-dsh/config.toml`（模板 `config.example.toml`，
+`CU_CONFIG` 可换路径；env `CU_<SECTION>_<KEY>` 始终覆盖文件；缺省值兜底）。
+
+| # | 绑定 | 收敛为 | 现状 |
 |---|---|---|---|
-| M1 | 机器名 `ARCHER` | `cu_dsh/mcp_server.py:1`（"Must run on ARCHER"） | 去掉机器名校验，只留"需 Windows 目标"检查 |
-| M2 | Windows 用户 `jawn` | 全部 `C:\Users\jawn` | 随 P1–P6 配置化 |
-| M3 | WSL 用户 `archer` / 发行版 `Ubuntu` | `cu_dsh/paths.py`（UNC 映射） | `WSL_DISTRO`/`WSL_USER` 配置或探测 |
-| M4 | 描述 "Shawn 的 Windows 桌面" | `SKILL.md` / 人设 | 泛化为"目标机"描述 |
+| M1 | 机器名 `ARCHER` | `[machine] allowlist`（空=放行） | mcp_server 启动时按 hostname 校验，不在名单即拒 |
+| M2 | Windows 用户 `jawn` | 随 P1–P6（`CU_*`） | 已随 M1 配置化 |
+| M3 | WSL 用户 `archer` / 发行版 `Ubuntu` | `CU_WSL_DISTRO` + `[wsl] checkout/nvm_bin/sessions_rel` | UNC 路径从 checkout+distro 推导，用户不再单独绑定 |
+| M4 | 描述 "Shawn 的 Windows 桌面" | `SKILL.md` 泛化 | 文档已泛化为"目标机" |
+| M5 | Tailscale host `archer.tailca07d9.ts.net` | `[tailscale] host`（空=不加入 allowlist） | mcp_server 的 allowed_hosts/origins 按配置组装 |
 
 ## 3. 环境假设
 
@@ -65,7 +69,7 @@ Linux 可跑，不依赖 Windows）。
 
 - [x] M0：搬入独立工作区 + vendor enikk + 绑定清点
 - [x] M1：路径配置化（P1–P6 → env/配置文件），代码零硬编码
-- [ ] M2：机器名/用户绑定去除（M1–M4）
+- [x] M2：机器名/用户绑定去除（→ config.toml 配置化）
 - [ ] M3：Windows 侧构建链独立（enikk exe + cu-dsh exe）
 - [ ] M4：发布形态（MCP server vs cordis 插件）定稿 + 泛化文档
 - [ ] M5：社区发布（npm/GitHub/dsh-plugin topic，复用 A/B 的发布链路）

@@ -20,6 +20,12 @@ _ENV_VARS = (
     "CU_SCREENPARSER_WEIGHT",
     "CU_PYTHON",
     "CU_WSL_DISTRO",
+    "CU_CONFIG",
+    "CU_MACHINE_ALLOWLIST",
+    "CU_WSL_CHECKOUT",
+    "CU_WSL_NVM_BIN",
+    "CU_WSL_SESSIONS_REL",
+    "CU_TAILSCALE_HOST",
 )
 
 
@@ -37,6 +43,8 @@ def clean_env(monkeypatch):
         config.user_apps_json,
         config.wsl_distro,
         config.cu_python,
+        config.config_file,
+        config._toml,
     ):
         fn.cache_clear()
 
@@ -118,3 +126,52 @@ def test_dump_is_resilient_and_complete(monkeypatch, tmp_path):
         "screenparser_weight", "apps_json", "user_apps_json",
         "wsl_distro", "cu_python", "apps_count",
     }
+
+
+def _write_config(tmp_path: Path, text: str) -> Path:
+    p = tmp_path / "config.toml"
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def test_config_file_toml_resolution(monkeypatch, tmp_path):
+    cfg = _write_config(tmp_path, """
+[machine]
+allowlist = ["ARCHER", "other-box"]
+
+[wsl]
+checkout = "/home/alice/minimal-agent-ts"
+nvm_bin = "/home/alice/.nvm/versions/node/v22/bin"
+sessions_rel = "docs/research/other/.dsh-home/sessions/--x--"
+
+[tailscale]
+host = "alice.tailnet.ts.net"
+""")
+    monkeypatch.setenv("CU_CONFIG", str(cfg))
+    assert config.config_file() == cfg
+    assert config.machine_allowlist() == ["ARCHER", "other-box"]
+    assert config.wsl_checkout() == "/home/alice/minimal-agent-ts"
+    assert config.wsl_nvm_bin() == "/home/alice/.nvm/versions/node/v22/bin"
+    assert config.wsl_sessions_rel() == "docs/research/other/.dsh-home/sessions/--x--"
+    assert config.tailscale_host() == "alice.tailnet.ts.net"
+
+
+def test_env_overrides_config_file(monkeypatch, tmp_path):
+    cfg = _write_config(tmp_path, '[wsl]\ncheckout = "/home/alice/checkout"\n')
+    monkeypatch.setenv("CU_CONFIG", str(cfg))
+    monkeypatch.setenv("CU_WSL_CHECKOUT", "/home/env-override/checkout")
+    assert config.wsl_checkout() == "/home/env-override/checkout"
+
+
+def test_machine_allowlist_env_and_defaults(monkeypatch):
+    # empty config + no env -> no machine check
+    assert config.machine_allowlist() == []
+    monkeypatch.setenv("CU_MACHINE_ALLOWLIST", " ARCHER , box2 ")
+    assert config.machine_allowlist() == ["ARCHER", "box2"]
+
+
+def test_missing_config_file_is_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("CU_CONFIG", str(tmp_path / "nope.toml"))
+    assert config.machine_allowlist() == []
+    assert config.wsl_checkout() == "/home/archer/zerostack-analysis/minimal-agent-ts"
+    assert config.tailscale_host() is None

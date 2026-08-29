@@ -1,0 +1,26 @@
+# cu-dsh configuration template (M2: machine/user bindings).
+# Copy to ~/.config/cu-dsh/config.toml (or set CU_CONFIG=/path/to/config.toml).
+# Every value here is optional — omitted keys fall back to sane defaults.
+# Environment variables (CU_<SECTION>_<KEY>, e.g. CU_WSL_CHECKOUT) always
+# override the file.
+
+[machine]
+# Machine names allowed to run `cu-dsh mcp`. Empty/missing = no check
+# (any host may serve). Set it to lock the MCP face to specific machines.
+allowlist = ["ARCHER", "other-box"]
+
+[tailscale]
+# Optional tailscale hostname admitted to the MCP transport allowlist
+# (allowed_hosts / allowed_origins). Omit when not serving over tailscale.
+host = "archer.tailca07d9.ts.net"
+
+[wsl]
+# Minimal-agent-ts checkout path AS SEEN FROM WSL (the vision bridge and the
+# inbox MCP bridge run inside WSL; the sessions log is read via UNC from it).
+checkout = "/home/archer/zerostack-analysis/minimal-agent-ts"
+# Node bin dir used to launch `npx tsx scripts/dsh-inbox-mcp.ts` in WSL
+# (wsl.exe interop can otherwise resolve the Windows node and break npx).
+nvm_bin = "/home/archer/.nvm/versions/node/v24.14.1/bin"
+# DSH session store path relative to the checkout, used to poll the vision
+# minion's reply.
+sessions_rel = "docs/research/dsh-spike/.dsh-home/sessions/--home-archer-zerostack-analysis-minimal-agent-ts-docs-research-dsh-cu-perceive--"

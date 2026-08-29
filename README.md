@@ -17,10 +17,14 @@ One core, two faces:
 
 ## Paths: zero hardcoded (M1)
 
-All machine paths resolve from **env override > repo-derived default** — no
-`C:\Users\...` anywhere in the code. Verify on any machine with:
+All machine paths resolve from **env override > config file > derived default** —
+no `C:\Users\...` anywhere in the code. Verify on any machine with:
 
     python -m cu_dsh config
+
+Config file: `~/.config/cu-dsh/config.toml` (or `CU_CONFIG`), template in
+`config.example.toml` — machine allowlist, tailscale host, WSL layout.
+Env vars always beat the file:
 
 | Env var | Default |
 |---|---|
@@ -31,6 +35,10 @@ All machine paths resolve from **env override > repo-derived default** — no
 | `CU_SCREENPARSER_WEIGHT` | `<CU_ROOT>/weights/screenparser/best.pt` |
 | `CU_PYTHON` | PATH probe (`python.exe`) — used by `bin/cu-dsh.sh` |
 | `CU_WSL_DISTRO` | `Ubuntu` (UNC path mappings) |
+| `CU_WSL_CHECKOUT` / `CU_WSL_NVM_BIN` / `CU_WSL_SESSIONS_REL` | config `[wsl]` / original deployment values |
+| `CU_MACHINE_ALLOWLIST` | config `[machine] allowlist`; empty = MCP serves any host |
+| `CU_TAILSCALE_HOST` | config `[tailscale] host`; empty = no tailscale admission |
+| `CU_CONFIG` | `~/.config/cu-dsh/config.toml` |
 
 > Behavior change vs pre-M1: default shots moved from
 > `C:\Users\jawn\agent-bus\archive\shots\perceive` to `<CU_ROOT>/shots`.

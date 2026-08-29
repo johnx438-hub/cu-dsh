@@ -30,20 +30,27 @@ DEFAULT_TASK = (
     "截图在: {path}"
 )
 
-# WSL-side constants (the checkout lives at this exact WSL path).
-_WSL_HOME = "/home/archer/zerostack-analysis/minimal-agent-ts"
-_SESSIONS_REL = (
-    "docs/research/dsh-spike/.dsh-home/sessions/"
-    "--home-archer-zerostack-analysis-minimal-agent-ts-docs-research-dsh-cu-perceive--"
-)
-_UNC_ROOT = r"\\wsl.localhost\Ubuntu" + _WSL_HOME.replace("/", "\\")
+# WSL-side layout comes from config (M2): [wsl] checkout / sessions_rel /
+# nvm_bin, env CU_WSL_* overrides; defaults match the original deployment.
+_WSL_HOME = config.wsl_checkout()
+_SESSIONS_REL = config.wsl_sessions_rel()
+_UNC_ROOT = r"\\wsl.localhost" + "\\" + config.wsl_distro() + _WSL_HOME.replace("/", "\\")
 
 
 def _wsl_python(script_wsl: str, *args: str) -> subprocess.CompletedProcess:
-    """Run a python script inside WSL from Windows python."""
+    """Run a python script inside WSL from Windows python.
+
+    Passes the resolved WSL layout through env so the bridge does not need
+    its own copy of the config (env CU_WSL_CHECKOUT / CU_WSL_NVM_BIN).
+    """
     quoted = " ".join(shlex_quote(a) for a in args)
+    exports = (
+        f"export CU_WSL_CHECKOUT={shlex_quote(_WSL_HOME)} "
+        f"CU_WSL_NVM_BIN={shlex_quote(config.wsl_nvm_bin())} "
+        f"CU_WSL_SESSIONS_REL={shlex_quote(_SESSIONS_REL)}; "
+    )
     return subprocess.run(
-        ["wsl.exe", "bash", "-lc", f"cd {_WSL_HOME} && python3 {script_wsl} {quoted}"],
+        ["wsl.exe", "bash", "-lc", f"cd {_WSL_HOME} && {exports} python3 {script_wsl} {quoted}"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -62,7 +69,7 @@ def vision_session_id() -> str:
     env = os.environ.get("CU_VISION_SESSION")
     if env:
         return env
-    base = Path(r"\\wsl.localhost\Ubuntu") / _WSL_HOME.replace("/", "\\").lstrip("\\")
+    base = Path(_UNC_ROOT)
     sessions = base / _SESSIONS_REL.replace("/", "\\")
     if sessions.exists():
         dirs = sorted(

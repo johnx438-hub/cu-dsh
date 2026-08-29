@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 from functools import lru_cache
 from pathlib import Path
 
@@ -38,11 +39,18 @@ __all__ = [
     "user_apps_json",
     "load_apps",
     "wsl_distro",
+    "wsl_checkout",
+    "wsl_nvm_bin",
+    "wsl_sessions_rel",
+    "machine_allowlist",
+    "tailscale_host",
     "cu_python",
+    "config_file",
     "dump",
 ]
 
 _USER_APPS = "cu-perceive/apps.json"
+_CONFIG_NAME = "cu-dsh/config.toml"
 
 
 def _env(name: str) -> str | None:
@@ -52,6 +60,73 @@ def _env(name: str) -> str | None:
         return None
     v = v.strip().strip('"').strip("'")
     return v or None
+
+
+@lru_cache(maxsize=1)
+def config_file() -> Path:
+    """M2: config file (CU_CONFIG env, else ~/.config/cu-dsh/config.toml)."""
+    v = _env("CU_CONFIG")
+    return Path(v) if v else Path.home() / ".config" / _CONFIG_NAME
+
+
+@lru_cache(maxsize=1)
+def _toml() -> dict:
+    """Parsed config file; missing/broken file is an empty table."""
+    p = config_file()
+    if not p.exists():
+        return {}
+    try:
+        with open(p, "rb") as f:
+            return tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def _cfg(section: str, key: str) -> str | None:
+    """M2: env > config file > None. Env name: CU_<SECTION>_<KEY>."""
+    v = _env(f"CU_{section.upper()}_{key.upper()}")
+    if v is not None:
+        return v
+    val = _toml().get(section, {}).get(key)
+    return str(val) if val is not None else None
+
+
+def machine_allowlist() -> list[str]:
+    """M2: machine names allowed to run the MCP server. Empty = no check.
+
+    env CU_MACHINE_ALLOWLIST (comma-separated) > config [machine] allowlist.
+    """
+    v = _env("CU_MACHINE_ALLOWLIST")
+    if v is not None:
+        return [x.strip() for x in v.split(",") if x.strip()]
+    raw = _toml().get("machine", {}).get("allowlist", [])
+    if isinstance(raw, list):
+        return [str(x) for x in raw if str(x).strip()]
+    return []
+
+
+def tailscale_host() -> str | None:
+    """M2: tailscale hostname admitted to the MCP allowlist (config [tailscale] host)."""
+    return _cfg("tailscale", "host")
+
+
+def wsl_checkout() -> str:
+    """M2: minimal-agent-ts checkout path seen from WSL (config [wsl] checkout)."""
+    return _cfg("wsl", "checkout") or "/home/archer/zerostack-analysis/minimal-agent-ts"
+
+
+def wsl_nvm_bin() -> str:
+    """M2: node bin dir used by the inbox bridge inside WSL (config [wsl] nvm_bin)."""
+    return _cfg("wsl", "nvm_bin") or "/home/archer/.nvm/versions/node/v24.14.1/bin"
+
+
+def wsl_sessions_rel() -> str:
+    """M2: DSH session store path relative to the checkout (config [wsl] sessions_rel)."""
+    return (
+        _cfg("wsl", "sessions_rel")
+        or "docs/research/dsh-spike/.dsh-home/sessions/"
+        "--home-archer-zerostack-analysis-minimal-agent-ts-docs-research-dsh-cu-perceive--"
+    )
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -168,6 +243,12 @@ def dump() -> dict:
         "apps_json": p(apps_json()),
         "user_apps_json": p(user_apps_json()),
         "wsl_distro": wsl_distro(),
+        "wsl_checkout": wsl_checkout(),
+        "wsl_nvm_bin": wsl_nvm_bin(),
+        "wsl_sessions_rel": wsl_sessions_rel(),
+        "machine_allowlist": machine_allowlist(),
+        "tailscale_host": tailscale_host(),
+        "config_file": p(config_file()),
         "cu_python": cu_python(),
         "apps_count": len(load_apps()),
     }
