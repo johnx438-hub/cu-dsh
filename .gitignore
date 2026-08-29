@@ -13,7 +13,6 @@ venv/
 *.pyd
 *.egg-info/
 dist/
-build/
 .pytest_cache/
 .mypy_cache/
 
@@ -27,3 +26,6 @@ shots/
 
 # enikk vendored weights (downloaded separately)
 vendor/enikk/weights/
+build/dist/
+build/build/
+build/LICENSES/

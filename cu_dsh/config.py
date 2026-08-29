@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tomllib
 from functools import lru_cache
 from pathlib import Path
@@ -139,16 +140,34 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _is_frozen() -> bool:
+    """True when running from a PyInstaller bundle (cu-dsh.exe)."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def _bundle_root() -> Path:
+    """Where the exe lives (onefile: sys.executable dir; onedir: _MEIPASS)."""
+    if _is_frozen():
+        return Path(sys.executable).resolve().parent
+    return Path.cwd()
+
+
 @lru_cache(maxsize=1)
 def cu_root() -> Path:
-    """P1: checkout root (CU_ROOT env, else derived from __file__)."""
+    """P1: checkout root (CU_ROOT env, else derived from __file__ or the exe dir)."""
+    if _is_frozen():
+        return _env_path("CU_ROOT", _bundle_root())
     return _env_path("CU_ROOT", repo_root())
 
 
 @lru_cache(maxsize=1)
 def enikk_root() -> Path:
     """P2: enikk OCR engine checkout (CU_ENIKK_ROOT, else vendored)."""
-    default = cu_root() / "vendor" / "enikk"
+    if _is_frozen():
+        # Bundled as data under _MEIPASS/enikk (see cu-dsh.spec).
+        default = Path(sys._MEIPASS) / "enikk"  # type: ignore[attr-defined]
+    else:
+        default = cu_root() / "vendor" / "enikk"
     root = _env_path("CU_ENIKK_ROOT", default)
     if not root.exists():
         raise FileNotFoundError(
