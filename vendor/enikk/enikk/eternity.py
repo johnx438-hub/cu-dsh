@@ -1,0 +1,671 @@
+"""Eternity — agent session manager backed by hermes AIAgent."""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import queue
+import threading
+import time as _time
+import uuid
+from dataclasses import dataclass, field
+from urllib.parse import quote
+
+import run_agent
+import tools.skills_sync
+from hermes_state import SessionDB
+
+from . import hermes_tools  # noqa: F401  explicit tool registration (frozen builds)
+from .prompts import DEFAULT_SYSTEM_PROMPT
+from .config import Config
+from .controller import AppController, extract_image_path
+from .events import EVT_DELTA, EVT_TOOL_CALL, EVT_TOOL_RESULT, EVT_REASONING, EVT_STEP_CONTEXT, EVT_ERROR, EVT_SESSION
+from . import telemetry
+from .version import __version__
+
+logger = logging.getLogger(__name__)
+
+# Toolsets enabled for every enikk agent session. The "file" toolset depends
+# on git bash and ripgrep; Enikk provides native file search via find_files.
+ENABLED_TOOLSETS = [
+    AppController.TOOLSET,
+    "skills",
+    "memory",
+    "session_search",
+    "todo",
+    "enikk_cron",
+]
+
+# Map hermes-agent FailoverReason values to user-friendly guidance.
+_PROVIDER_ERROR_GUIDANCE: dict[str, str] = {
+    "auth": "API 认证失败，请检查 config.yaml 中的 api_key 是否正确",
+    "auth_permanent": "API 认证失败，请检查 config.yaml 中的 api_key 是否正确",
+    "billing": "API 额度或余额不足，请检查账户",
+    "model_not_found": "模型不存在或不可用，请检查 model.default 配置",
+    "rate_limit": "API 请求频率超限，请稍后重试",
+    "upstream_rate_limit": "API 请求频率超限，请稍后重试",
+    "timeout": "API 连接超时，请检查 base_url 是否正确以及网络是否通畅",
+    "server_error": "服务端错误，请稍后重试",
+    "overloaded": "服务端过载，请稍后重试",
+}
+
+
+@dataclass
+class StreamChannel:
+    """Pub/sub channel for streaming events from agent to SSE clients."""
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    subscribers: list[queue.Queue] = field(default_factory=list)
+
+    def subscribe(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue()
+        with self._lock:
+            self.subscribers.append(q)
+        logger.debug("StreamChannel subscribed (%d subscribers)", len(self.subscribers))
+        return q
+
+    def unsubscribe(self, q: queue.Queue):
+        with self._lock:
+            if q in self.subscribers:
+                self.subscribers.remove(q)
+        logger.debug("StreamChannel unsubscribed (%d subscribers)", len(self.subscribers))
+
+    def publish(self, event: dict):
+        with self._lock:
+            subs = list(self.subscribers)
+        for q in subs:
+            q.put(event)
+
+    def close(self):
+        with self._lock:
+            for q in self.subscribers:
+                q.put(None)  # sentinel
+            self.subscribers.clear()
+        logger.debug("StreamChannel closed")
+
+
+@dataclass
+class SessionHandle:
+    """Track one agent session."""
+
+    session_id: str
+    thread: threading.Thread
+    agent: run_agent.AIAgent
+    stream: StreamChannel = field(default_factory=StreamChannel)
+    result: dict | None = field(default=None)
+    _started_at: float = field(default_factory=_time.monotonic)
+    _tool_call_count: int = 0
+    # (tool_name, error_type) pairs already reported to telemetry this
+    # session — a broken tool retried in a loop must not spam events.
+    _reported_tool_errors: set = field(default_factory=set)
+
+    def publish(self, event: str, data: dict) -> None:
+        """Publish an SSE event, auto-inserting session_id into data."""
+        data = {"session_id": self.session_id, **data}
+        self.stream.publish({"event": event, "data": data})
+
+
+# ── Tool-failure telemetry ─────────────────────────────────────────────
+
+# Cap on distinct (tool, error_type) pairs reported per session.
+_MAX_TOOL_ERROR_REPORTS = 10
+
+
+def _tool_error_message(result) -> str | None:
+    """Extract the error message from a tool result, or None on success.
+
+    Covers both failure shapes hermes/enikk tools produce:
+      - {"error": "..."} (dispatch exceptions, tool_error())
+      - {"success": false, ...} (handlers reporting business failure)
+    """
+    obj = result
+    if isinstance(obj, str):
+        try:
+            obj = json.loads(obj)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(obj, dict):
+        return None
+    err = obj.get("error")
+    if err:
+        return str(err)
+    if obj.get("success") is False:
+        return "tool reported success=false"
+    return None
+
+
+def _track_tool_failure(handle: SessionHandle, name: str, result) -> None:
+    """Send a telemetry event when a tool call failed (deduped per session)."""
+    message = _tool_error_message(result)
+    if message is None:
+        return
+    # Dispatch-level exceptions are wrapped by hermes as
+    # "Tool execution failed: <ExcType>: <msg>" (tools.registry.dispatch).
+    error_type = "exception" if message.startswith("Tool execution failed:") else "tool_error"
+    key = (name, error_type)
+    if key in handle._reported_tool_errors or len(handle._reported_tool_errors) >= _MAX_TOOL_ERROR_REPORTS:
+        return
+    handle._reported_tool_errors.add(key)
+    telemetry.track_tool_error(
+        __version__, name, error_type,
+        error_detail=message[:300],
+    )
+
+
+class Eternity:
+    """Manages AI agent sessions backed by hermes SessionDB + AIAgent."""
+
+    def __init__(self, config: Config):
+        self.config = config
+        self._controller: AppController | None = None
+        self._sessions: dict[str, SessionHandle] = {}
+        self._lock = threading.RLock()
+        self._registered = False
+        self._shutdown = False
+
+    # ── Setup ──────────────────────────────────────────────────────────
+
+    def setup(self) -> None:
+        """One-time init: sync bundled skills, create SessionDB, AppController, register tools."""
+        logging.getLogger("run_agent").setLevel(logging.WARNING)
+
+        tools.skills_sync.sync_skills(quiet=True)
+        self.config.load_apps()
+
+        self._session_db = SessionDB()
+        logger.info("SessionDB at %s", self._session_db.db_path)
+
+        self._controller = AppController(self.config)
+        if not self._registered:
+            self._controller.register_tools()
+            from .cron import register_cron_tools
+            register_cron_tools()
+            self._registered = True
+
+    @property
+    def controller(self) -> AppController | None:
+        """Access the AppController (available after setup())."""
+        return self._controller
+
+    # ── Session management ─────────────────────────────────────────────
+
+    def create_session(
+        self,
+        task: str,
+        *,
+        model: str | None = None,
+        system_message: str | None = None,
+        max_iterations: int | None = None,
+        session_id: str | None = None,
+        source: str = "enikk",
+        title: str | None = None,
+    ) -> str:
+        """Create a session and start the agent in a background thread.
+
+        Args:
+            source: Session origin tag (e.g. "enikk" for web UI, "enikk_im" for IM).
+                Stored in SessionDB's source field for filtering/display.
+            title: Optional session title to set immediately. If not provided,
+                the agent may auto-generate one from the first exchange.
+
+        Returns the session_id immediately.
+        """
+        if session_id is None:
+            session_id = uuid.uuid4().hex[:12]
+
+        # Create handle first so callbacks can reference stream
+        handle = SessionHandle(session_id=session_id, thread=None, agent=None)  # type: ignore[arg-type]
+
+        def _publish(event: str, data: dict) -> None:
+            """Publish an SSE event, logging only important events."""
+            if event in (EVT_TOOL_CALL, EVT_TOOL_RESULT, EVT_SESSION):
+                logger.debug("SSE [%s/%s] %s", session_id, event, json.dumps(data, default=str)[:200])
+            handle.publish(event, data)
+
+        def _publish_tool_result(tc_id: str, name: str, result) -> None:
+            """Publish tool_result event, enriching with imageUrl if result contains image path."""
+            data = {"call_id": tc_id, "name": name, "result": result}
+            # Extract duration_ms from result (may be dict or JSON string from tool_result())
+            result_obj = result
+            if isinstance(result, str):
+                try:
+                    result_obj = json.loads(result)
+                except (ValueError, TypeError):
+                    result_obj = None
+            if isinstance(result_obj, dict) and "duration_ms" in result_obj:
+                data["duration_ms"] = result_obj["duration_ms"]
+            img_path = extract_image_path(result)
+            if img_path:
+                data["imageUrl"] = f"/api/images?path={quote(img_path, safe='')}"
+            _publish(EVT_TOOL_RESULT, data)
+
+        def _on_tool_start(tc_id: str, name: str, args) -> None:
+            """Publish tool_call event and increment tool call counter."""
+            handle._tool_call_count += 1
+            _publish(EVT_TOOL_CALL, {"call_id": tc_id, "name": name, "args": args})
+
+        def _on_tool_complete(tc_id: str, name: str, _args, result) -> None:
+            """Publish tool_result event with optional image enrichment."""
+            _publish_tool_result(tc_id, name, result)
+            try:
+                _track_tool_failure(handle, name, result)
+            except Exception:
+                logger.debug("Tool-failure telemetry failed", exc_info=True)
+
+        def _on_stream_delta(delta) -> None:
+            """Publish streaming text delta."""
+            if delta is not None:
+                _publish(EVT_DELTA, {"text": delta})
+
+        def _on_reasoning(text: str) -> None:
+            """Publish reasoning text."""
+            _publish(EVT_REASONING, {"text": text})
+
+        def _on_step(count, _tools) -> None:
+            """Publish step context with usage info."""
+            _publish(EVT_STEP_CONTEXT, {
+                "step": count,
+                **self._get_context_usage(handle).get("context_usage", {}),
+            })
+
+        mc = self.config.model
+        if max_iterations is None:
+            max_iterations = self.config.workspace.max_iterations
+        try:
+            agent = run_agent.AIAgent(
+                base_url=mc.effective_base_url or None,
+                api_key=mc.api_key or None,
+                provider=mc.effective_provider or None,
+                model=model or mc.default,
+                max_tokens=mc.max_tokens,
+                platform=source,
+                enabled_toolsets=ENABLED_TOOLSETS,
+                quiet_mode=True,
+                save_trajectories=False,
+                max_iterations=max_iterations,
+                session_id=session_id,
+                session_db=self._session_db,
+                skip_memory=True,
+                tool_start_callback=_on_tool_start,
+                tool_complete_callback=_on_tool_complete,
+                stream_delta_callback=_on_stream_delta,
+                reasoning_callback=_on_reasoning,
+                step_callback=_on_step,
+            )
+        except RuntimeError as e:
+            if "No LLM provider" in str(e):
+                raise RuntimeError(
+                    "LLM provider not configured. Please set model.base_url and model.api_key in config.yaml"
+                ) from None
+            raise
+
+        logger.info(
+            "Session %s agent initialized with %d tools: %s",
+            session_id,
+            len(agent.tools),
+            ", ".join(sorted(agent.valid_tool_names)),
+        )
+        # Canary for silent tool-registration failures (e.g. hermes filesystem
+        # discovery finding nothing in frozen builds): the enabled toolsets
+        # promised these tools, so their absence is always a bug.
+        missing_tools = hermes_tools.REQUIRED_TOOLS - agent.valid_tool_names
+        if missing_tools:
+            logger.warning(
+                "Session %s agent is missing expected hermes tools: %s "
+                "(tool registration may have failed — see enikk/hermes_tools.py)",
+                session_id,
+                ", ".join(sorted(missing_tools)),
+            )
+
+        # Set title if provided (before thread starts, so it's in DB before auto-title can run)
+        if title:
+            try:
+                agent._ensure_db_session()
+                self._session_db.set_session_title(session_id, title)
+            except Exception:
+                logger.warning("Failed to set session title: %s", title, exc_info=True)
+
+        # Set up memory store directly with enikk's configured char limits
+        if self.config.memory.memory_enabled:
+            from tools.memory_tool import MemoryStore, get_memory_dir
+            memory_dir = get_memory_dir()
+            logger.info(
+                "Initializing memory store: path=%s, memory_char_limit=%d, user_char_limit=%d",
+                memory_dir,
+                self.config.memory.memory_char_limit,
+                self.config.memory.user_char_limit,
+            )
+            agent._memory_store = MemoryStore(
+                memory_char_limit=self.config.memory.memory_char_limit,
+                user_char_limit=self.config.memory.user_char_limit,
+            )
+            agent._memory_store.load_from_disk()
+            logger.info(
+                "Memory store loaded: %d memory entries, %d user entries",
+                len(agent._memory_store.memory_entries),
+                len(agent._memory_store.user_entries),
+            )
+            agent._memory_enabled = True
+            agent._user_profile_enabled = True
+            agent._memory_nudge_interval = self.config.memory.nudge_interval
+
+        handle.agent = agent
+        thread = threading.Thread(
+            target=self._run_agent,
+            args=(handle, task, system_message or DEFAULT_SYSTEM_PROMPT),
+            daemon=True,
+        )
+        handle.thread = thread
+        with self._lock:
+            self._sessions[session_id] = handle
+        thread.start()
+
+        logger.info("Session %s started (task=%r)", session_id, task[:80])
+        return session_id
+
+    def _run_agent(self, handle: SessionHandle, task: str, system_message: str) -> None:
+        """Thread target: run the agent conversation, store result on completion."""
+        handle._started_at = _time.monotonic()
+        error_type = None
+        error_detail = None
+        try:
+            handle.publish(EVT_SESSION, {"status": "running"})
+            history = self._session_db.get_messages_as_conversation(handle.session_id)
+            if history:
+                logger.info("Session %s loaded %d history messages", handle.session_id, len(history))
+            result = handle.agent.run_conversation(
+                task, system_message=system_message, conversation_history=history,
+            )
+            handle.result = result
+            final_response = result.get("final_response")
+            if result.get("failed"):
+                error_detail = str(result.get("error", "unknown error"))
+                reason = result.get("failure_reason", "")
+                error_type = f"api_{reason}" if reason else "api_failure"
+                guidance = _PROVIDER_ERROR_GUIDANCE.get(
+                    reason, f"API 调用失败: {error_detail}",
+                )
+                logger.warning("Session %s failed: reason=%s error=%s", handle.session_id, reason, error_detail)
+                handle.publish(EVT_ERROR, {"message": guidance})
+                handle.publish(EVT_SESSION, {
+                    "status": "error",
+                    "error": guidance,
+                    **self._get_context_usage(handle),
+                })
+            else:
+                handle.publish(EVT_SESSION, {
+                    "status": "completed",
+                    "final_response": final_response,
+                    **self._get_context_usage(handle),
+                })
+        except InterruptedError:
+            logger.info("Session %s interrupted", handle.session_id)
+            handle.result = {"status": "interrupted"}
+            handle.publish(EVT_SESSION, {"status": "stopped", **self._get_context_usage(handle)})
+        except Exception as e:
+            logger.exception("Session %s failed", handle.session_id)
+            handle.result = {"error": "agent exception"}
+            error_type = "exception"
+            error_detail = str(e)
+            handle.publish(EVT_SESSION, {"status": "error", **self._get_context_usage(handle)})
+            handle.publish(EVT_ERROR, {"message": "agent exception"})
+        finally:
+            duration_s = round(_time.monotonic() - handle._started_at, 1)
+            telemetry.track_session_completed(
+                __version__, success=error_type is None,
+                tool_call_count=handle._tool_call_count,
+                duration_seconds=duration_s,
+            )
+            if error_type:
+                telemetry.track_agent_error(__version__, error_type, error_detail)
+            logger.info("Session %s finished", handle.session_id)
+            handle.stream.close()
+
+    def _get_context_usage(self, handle: SessionHandle) -> dict:
+        """Read context usage from the live agent's context compressor."""
+        cc = getattr(handle.agent, "context_compressor", None)
+        if not cc:
+            return {}
+        return {
+            "context_usage": {
+                "current": getattr(cc, "last_prompt_tokens", 0),
+                "limit": getattr(cc, "context_length", 0),
+            }
+        }
+
+    def list_sessions(self, limit: int = 20, offset: int = 0) -> list[dict]:
+        """List sessions from SessionDB, ordered by last activity.
+
+        Cron sessions (id starting with 'cron_') are included and marked with
+        is_cron=True so the frontend can group them separately.
+        """
+        sessions = self._session_db.list_sessions_rich(
+            limit=limit, offset=offset, order_by_last_active=True
+        )
+        for s in sessions:
+            sid = s.get("id", "")
+            s["is_running"] = self.is_running(sid)
+            s["is_cron"] = sid.startswith("cron_")
+            s["is_im"] = s.get("source") == "enikk_im"
+            if s["is_im"]:
+                logger.debug("IM session: id=%s source=%s title=%r preview=%r",
+                             sid, s.get("source"), s.get("title"), s.get("preview"))
+        return sessions
+
+    def list_cron_sessions(self, job_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
+        """List sessions for a specific cron job, ordered by last activity."""
+        prefix = f"cron_{job_id}_"
+        sessions = self._session_db.list_sessions_rich(
+            limit=200, offset=0, order_by_last_active=True
+        )
+        sessions = [s for s in sessions if s.get("id", "").startswith(prefix)]
+        sessions = sessions[offset:offset + limit]
+        for s in sessions:
+            s["is_running"] = self.is_running(s["id"])
+        return sessions
+
+    def is_running(self, session_id: str) -> bool:
+        """Check if a session is currently running."""
+        handle = self._sessions.get(session_id)
+        return handle is not None and handle.thread is not None and handle.thread.is_alive()
+
+    def steer_session(self, session_id: str, message: str) -> bool:
+        """Inject a message mid-conversation via agent.steer().
+
+        If session is not loaded or has finished, auto-loads it and uses message as task.
+        """
+        with self._lock:
+            handle = self._sessions.get(session_id)
+
+            # Session not in memory or thread finished — auto-load it
+            if handle is None or not handle.thread.is_alive():
+                # Check if session exists in database
+                messages = self._session_db.get_messages(session_id)
+                if not messages:
+                    return False  # Session doesn't exist at all
+
+                # Reload session with the new message as task
+                logger.info("Session %s not loaded, auto-loading with message: %s", session_id, message[:80])
+                self.create_session(task=message, session_id=session_id)
+                return True
+
+            # Session is running — steer it
+            handle.agent.steer(message)
+            logger.info("Session %s steered: %s", session_id, message[:80])
+            return True
+
+    def stop_session(self, session_id: str) -> bool:
+        """Interrupt a running session's agent."""
+        with self._lock:
+            handle = self._sessions.get(session_id)
+            if not handle or not handle.thread.is_alive():
+                return False
+            if handle.agent:
+                handle.agent.interrupt()
+                logger.info("Session %s interrupted", session_id)
+            return True
+
+    def rename_session(self, session_id: str, title: str) -> bool:
+        """Update the title of a session.
+
+        Returns True if the session was found and title was updated.
+        Raises ValueError if the title is invalid or already in use.
+        """
+        with self._lock:
+            return self._session_db.set_session_title(session_id, title)
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete session from memory and SessionDB."""
+        with self._lock:
+            self._session_db.delete_session(session_id)
+            handle = self._sessions.pop(session_id, None)
+            if handle:
+                handle.stream.close()
+            logger.info("Session %s deleted", session_id)
+            return True
+
+    def evict_session(self, session_id: str) -> bool:
+        """Remove a finished session from memory only (keep on disk).
+
+        Releases the SessionHandle / AIAgent so it can be GC'd, while
+        preserving conversation history in SessionDB for UI viewing.
+        Returns True if a handle was evicted.
+        """
+        with self._lock:
+            handle = self._sessions.pop(session_id, None)
+            if handle:
+                handle.stream.close()
+                logger.debug("Session %s evicted from memory", session_id)
+                return True
+            return False
+
+    # ── Lifecycle ───────────────────────────────────────────────────────
+
+    def shutdown(self, timeout: float = 2.0) -> None:
+        """Stop all running sessions and clean up resources."""
+        if self._shutdown:
+            return
+        self._shutdown = True
+
+        with self._lock:
+            sessions = list(self._sessions.items())
+
+        logger.info("Shutting down Eternity, stopping %d sessions...", len(sessions))
+        for session_id, handle in sessions:
+            logger.info("Stopping session %s", session_id)
+            handle.stream.close()
+            if handle.thread and handle.thread.is_alive():
+                if handle.agent:
+                    handle.agent.interrupt()
+                handle.thread.join(timeout=timeout)
+                if handle.thread.is_alive():
+                    logger.debug("Thread %s did not stop within timeout (will be killed on exit)", handle.thread.name)
+
+        with self._lock:
+            self._sessions.clear()
+        logger.info("Eternity shutdown complete")
+
+    def get_session_messages(
+        self, session_id: str, limit: int = 100, before_id: str | None = None
+    ) -> dict:
+        """Get messages for a session, paginated (latest first).
+
+        Returns {"messages": [...], "has_more": bool}.
+        """
+        messages = self._session_db.get_messages(session_id)
+        total = len(messages)
+
+        if before_id:
+            # Find index of message with given id, return older ones
+            # Convert to int for comparison (DB ids are integers)
+            try:
+                before_id_int = int(before_id)
+            except (ValueError, TypeError):
+                before_id_int = -1
+            idx = next((i for i, m in enumerate(messages) if m.get("id") == before_id_int), total)
+            end = idx
+        else:
+            end = total
+
+        start = max(0, end - limit)
+        result = messages[start:end]
+        has_more = start > 0
+
+        for m in result:
+            if m.get("role") == "tool" and m.get("content"):
+                img_path = extract_image_path(m["content"])
+                if img_path:
+                    m["imageUrl"] = f"/api/images?path={quote(img_path, safe='')}"
+
+        return {"messages": result, "has_more": has_more}
+
+    async def get_session_stream(self, session_id: str):
+        """Async generator that yields SSE events from the agent's StreamChannel."""
+        handle = self._sessions.get(session_id)
+        if not handle:
+            logger.warning("get_session_stream: session %s not found", session_id)
+            return
+
+        q = handle.stream.subscribe()
+        logger.info("SSE stream started for session %s", session_id)
+        try:
+            while True:
+                # Use asyncio.to_thread for non-blocking queue.get() with timeout
+                try:
+                    event = await asyncio.to_thread(q.get, timeout=5.0)
+                except queue.Empty:
+                    # No event for 5 seconds, check if session still running
+                    if not self.is_running(session_id):
+                        # Drain any remaining events
+                        while not q.empty():
+                            event = q.get_nowait()
+                            if event is not None:
+                                yield event
+                        logger.info("SSE stream: session %s finished", session_id)
+                        break
+                    # Session still running, continue waiting
+                    continue
+
+                if event is None:
+                    logger.info("SSE stream closed for session %s", session_id)
+                    break
+                yield event
+        except asyncio.CancelledError:
+            logger.info("SSE stream cancelled for session %s", session_id)
+            raise
+        finally:
+            handle.stream.unsubscribe(q)
+
+    def wait_for_session(self, session_id: str, timeout: float | None = None) -> dict | None:
+        """Block until a session completes. Returns the result dict, or None on timeout."""
+        handle = self._sessions.get(session_id)
+        if handle is None:
+            return None
+        handle.thread.join(timeout=timeout)
+        return handle.result
+
+    # ── Public status API ────────────────────────────────────────────────
+
+    def get_icon_finder_available(self) -> bool:
+        """Check if YOLO icon finder is ready."""
+        if self._controller and self._controller.ui_parser:
+            return self._controller.ui_parser.yolo_session is not None
+        return False
+
+    def get_icon_finder_dml_enabled(self) -> bool:
+        """Check if DirectML is enabled for icon finder."""
+        if self._controller and self._controller.ui_parser:
+            return getattr(self._controller.ui_parser, 'use_dml', False)
+        return False
+
+    def get_ocr_available(self) -> bool:
+        """Check if OCR engine is ready."""
+        if self._controller and self._controller.ui_parser:
+            return hasattr(self._controller.ui_parser, 'ocr') and self._controller.ui_parser.ocr is not None
+        return False
+
+    def get_ocr_dml_enabled(self) -> bool:
+        """Check if DirectML is enabled for OCR."""
+        if self._controller and self._controller.ui_parser:
+            return getattr(self._controller.ui_parser, 'use_dml_ocr', False)
+        return False
+

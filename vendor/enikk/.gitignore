@@ -1,0 +1,30 @@
+*.pyc
+__pycache__/
+*.egg-info/
+.venv/
+screenshots/
+build/
+dist/
+
+config.yaml
+
+# Data files
+accounts/
+auth.json
+auth.lock
+logs/
+memories/
+sessions/
+trajectories/
+models_dev_cache.json
+SOUL.md
+view.py
+failed_trajectories.jsonl
+
+# IDE & Editor
+.vscode/
+.idea/
+
+# Claude Code
+.claude/*
+!.claude/commands/
