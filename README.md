@@ -1,5 +1,7 @@
 # cu-dsh
 
+**English** · [**中文**](README.zh.md)
+
 Private dogfood. Pin one window, read the 0-1000 grid map, then act.
 
 One core, two faces:
