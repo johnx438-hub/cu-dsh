@@ -33,6 +33,18 @@ python -m cu_perceive config
 
 出图：默认 `<CU_SHOT_DIR>`（或 `--out`）。给人看时读返回的 `map` 再附上。
 
+## 视觉小弟（describe）
+
+本模型看不了图时，把实拍丢给本地多模态小弟反详细描述：
+
+```
+cu-perceive describe --hwnd N [--task "自定义问题，{path}=截图路径"] [--session <小弟session>] [--timeout 240]
+```
+
+- 流程：实拍 → 经 dsh-inbox MCP 桥（`cu_perceive/inbox_bridge.py`，WSL 侧 stdio）投看图任务 → 轮询小弟会话日志取回复
+- 小弟 = DSH 里 `provider=lmstudio` + 多模态模型（如 `qwen3.8-27b-uncensored-orcarouter`）+ `persona=vision-buddy` 的 session；`CU_VISION_SESSION` 或 `--session` 指定，缺省取最新
+- 当前实拍源 `--hwnd`：0 = 主屏；`--title`/`--exe` 选窗
+
 ## 坐标
 
 - `norm`：当前这张 `map` 的 0–1000（先看图再报点）
