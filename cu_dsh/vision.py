@@ -203,8 +203,12 @@ def describe(
 
     # 1. Baseline the minion's latest reply BEFORE delivering, then wait for
     #    a NEWER assistant text (the reply to this task, not an older one).
+    #    `_latest_reply_text` only REPORTS the newest text; mark it seen here
+    #    or the first poll would return the pre-delivery reply as a "new" one.
     seen: set[str] = set()
-    _latest_reply_text(sid, seen)
+    baseline = _latest_reply_text(sid, seen)
+    if baseline is not None:
+        seen.add(baseline)
 
     # 2. Deliver the read-image task through the WSL inbox bridge.
     bridge_wsl = f"{_WSL_HOME}/docs/research/dsh-cu-perceive/cu_dsh/inbox_bridge.py"
