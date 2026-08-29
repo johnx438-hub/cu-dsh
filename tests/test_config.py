@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from cu_perceive import config
+from cu_dsh import config
 
 _ENV_VARS = (
     "CU_ROOT",

@@ -60,7 +60,7 @@ def _env_path(name: str, default: Path) -> Path:
 
 
 def repo_root() -> Path:
-    """The cu-perceive checkout root = parent of the cu_perceive package dir."""
+    """The cu-perceive checkout root = parent of the cu_dsh package dir."""
     return Path(__file__).resolve().parent.parent
 
 

@@ -1,11 +1,11 @@
-# cu-perceive
+# cu-dsh
 
 Private dogfood. Pin one window, read the 0-1000 grid map, then act.
 
 One core, two faces:
 
-- CLI: `python -m cu_perceive perceive|windows|act|config`
-- MCP: `python -m cu_perceive mcp` -> http://127.0.0.1:8771/mcp (loopback only; do not bind 0.0.0.0)
+- CLI: `python -m cu_dsh perceive|windows|act|config`
+- MCP: `python -m cu_dsh mcp` -> http://127.0.0.1:8771/mcp (loopback only; do not bind 0.0.0.0)
 
 8766 may still listen as a leftover instance. Testers use **8771**.
 
@@ -20,16 +20,16 @@ One core, two faces:
 All machine paths resolve from **env override > repo-derived default** — no
 `C:\Users\...` anywhere in the code. Verify on any machine with:
 
-    python -m cu_perceive config
+    python -m cu_dsh config
 
 | Env var | Default |
 |---|---|
 | `CU_ROOT` | this repo (derived from `__file__`) |
 | `CU_ENIKK_ROOT` | `<CU_ROOT>/vendor/enikk` (vendored OCR engine) |
 | `CU_SHOT_DIR` | `<CU_ROOT>/shots` |
-| `CU_APPS_JSON` | `<CU_ROOT>/apps.json` (+ per-user override `~/.config/cu-perceive/apps.json`, merged by name) |
+| `CU_APPS_JSON` | `<CU_ROOT>/apps.json` (+ per-user override `~/.config/cu-dsh/apps.json`, merged by name) |
 | `CU_SCREENPARSER_WEIGHT` | `<CU_ROOT>/weights/screenparser/best.pt` |
-| `CU_PYTHON` | PATH probe (`python.exe`) — used by `bin/cu-perceive.sh` |
+| `CU_PYTHON` | PATH probe (`python.exe`) — used by `bin/cu-dsh.sh` |
 | `CU_WSL_DISTRO` | `Ubuntu` (UNC path mappings) |
 
 > Behavior change vs pre-M1: default shots moved from
@@ -47,13 +47,13 @@ All machine paths resolve from **env override > repo-derived default** — no
 
 ## Run
 
-    python -m cu_perceive windows
-    python -m cu_perceive perceive --hwnd N
-    python -m cu_perceive act --stamp STAMP
+    python -m cu_dsh windows
+    python -m cu_dsh perceive --hwnd N
+    python -m cu_dsh act --stamp STAMP
 
 WSL wrapper (self-locating; Windows python from `CU_PYTHON` or PATH):
 
-    CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-perceive.sh windows
+    CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-dsh.sh windows
 
 See `SKILL.md` for the operator contract and `BINDINGS.md` for the
 de-hardcoding worklog (M1 done, M2+ pending).

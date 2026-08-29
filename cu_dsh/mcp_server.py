@@ -48,7 +48,7 @@ def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
 
     ts_host = "archer.tailca07d9.ts.net"
     app = FastMCP(
-        "cu-perceive",
+        "cu-dsh",
         host=host,
         port=port,
         transport_security=TransportSecuritySettings(

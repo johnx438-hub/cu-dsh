@@ -1,12 +1,12 @@
 ---
-name: cu-perceive
+name: cu-dsh
 description: >-
-  use when looking at or acting on Shawn's Windows desktop via cu-perceive (CLI
+  use when looking at or acting on Shawn's Windows desktop via cu-dsh (CLI
   now, MCP later) — pin one window, read the 0-1000 grid map, then
   click/type/drag by norm or xy. OCR ids optional. Default dry-run; --go only
   when Shawn said so. Not for the cloud computer screen.
 ---
-# cu-perceive
+# cu-dsh
 
 看或操作 **Shawn 的 Windows 桌面**（ARCHER）时用。云电脑屏幕不走这里。
 
@@ -19,17 +19,17 @@ MCP 的 `windows` / `perceive_window` 默认带一张压缩格子图（长边 12
 ## 跑法（CLI）
 
 ```
-python -m cu_perceive <cmd>          # 本机 python 已装依赖时
-bin/cu-perceive.sh <cmd>             # WSL 里调 Windows python（自定位，无需硬编码路径）
+python -m cu_dsh <cmd>          # 本机 python 已装依赖时
+bin/cu-dsh.sh <cmd>             # WSL 里调 Windows python（自定位，无需硬编码路径）
 ```
 
 路径零硬编码（M1）：所有机器路径 = 环境变量覆盖 > 仓库布局推导。查解析结果：
 
 ```
-python -m cu_perceive config
+python -m cu_dsh config
 ```
 
-常用变量：`CU_ROOT`（仓库根）、`CU_ENIKK_ROOT`（OCR 引擎，默认 `<CU_ROOT>/vendor/enikk`）、`CU_SHOT_DIR`（出图目录，默认 `<CU_ROOT>/shots`，旧行为是 `C:\Users\jawn\agent-bus\archive\shots\perceive`，要保留就 export 它）、`CU_PYTHON`（`bin/cu-perceive.sh` 用的 Windows python，缺省探测 PATH）、`CU_WSL_DISTRO`（UNC 映射的发行版，默认 Ubuntu）。
+常用变量：`CU_ROOT`（仓库根）、`CU_ENIKK_ROOT`（OCR 引擎，默认 `<CU_ROOT>/vendor/enikk`）、`CU_SHOT_DIR`（出图目录，默认 `<CU_ROOT>/shots`，旧行为是 `C:\Users\jawn\agent-bus\archive\shots\perceive`，要保留就 export 它）、`CU_PYTHON`（`bin/cu-dsh.sh` 用的 Windows python，缺省探测 PATH）、`CU_WSL_DISTRO`（UNC 映射的发行版，默认 Ubuntu）。
 
 出图：默认 `<CU_SHOT_DIR>`（或 `--out`）。给人看时读返回的 `map` 再附上。
 
@@ -38,10 +38,10 @@ python -m cu_perceive config
 本模型看不了图时，把实拍丢给本地多模态小弟反详细描述：
 
 ```
-cu-perceive describe --hwnd N [--task "自定义问题，{path}=截图路径"] [--session <小弟session>] [--timeout 240]
+cu-dsh describe --hwnd N [--task "自定义问题，{path}=截图路径"] [--session <小弟session>] [--timeout 240]
 ```
 
-- 流程：实拍 → 经 dsh-inbox MCP 桥（`cu_perceive/inbox_bridge.py`，WSL 侧 stdio）投看图任务 → 轮询小弟会话日志取回复
+- 流程：实拍 → 经 dsh-inbox MCP 桥（`cu_dsh/inbox_bridge.py`，WSL 侧 stdio）投看图任务 → 轮询小弟会话日志取回复
 - 小弟 = DSH 里 `provider=lmstudio` + 多模态模型（如 `qwen3.8-27b-uncensored-orcarouter`）+ `persona=vision-buddy` 的 session；`CU_VISION_SESSION` 或 `--session` 指定，缺省取最新
 - 当前实拍源 `--hwnd`：0 = 主屏；`--title`/`--exe` 选窗
 
@@ -97,16 +97,16 @@ cu-perceive describe --hwnd N [--task "自定义问题，{path}=截图路径"] [
 从 WSL 调 Windows 上的 Python（不要用 Linux python）。脚本自定位仓库根，解释器走 `CU_PYTHON` 或 PATH 里的 `python.exe`：
 
 ```
-CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-perceive.sh windows
-./bin/cu-perceive.sh perceive --hwnd N
-./bin/cu-perceive.sh act --stamp STAMP --drag-norm ...
+CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-dsh.sh windows
+./bin/cu-dsh.sh perceive --hwnd N
+./bin/cu-dsh.sh act --stamp STAMP --drag-norm ...
 ```
 
 MCP 本机 loopback（不碰 8000 的 windows-mcp）：
 
     http://127.0.0.1:8771/mcp
 
-Grok: ~/.grok/config.toml 里 [mcp_servers.cu-perceive]。
+Grok: ~/.grok/config.toml 里 [mcp_servers.cu-dsh]。
 minimal-agent-ts: agent.json 的 mcp_servers 里同名一项。
 当前端口是 8771。8766 可能还有旧进程 / Tailscale 反代，别连。
 MCP 默认带压缩图；要全分辨率走磁盘路径。CLI 仍用 map 路径。WSL 用返回的 `map_wsl` / `png_wsl`。写进 Linux workspace 用 UNC： `\\wsl.localhost\Ubuntu\home\archer\zerostack-analysis\...`。 不要传 `/home/archer/...`，Win Python 会当相对路径写到 `C:\home\archer`，不报错。 `/mnt/c/...` 仍映射到 NTFS。origin.left <= -10000 是最小化哨兵，丢掉 stamp 重 perceieve。

@@ -133,7 +133,7 @@ def describe(
     _latest_reply_text(sid, seen)
 
     # 2. Deliver the read-image task through the WSL inbox bridge.
-    bridge_wsl = f"{_WSL_HOME}/docs/research/dsh-cu-perceive/cu_perceive/inbox_bridge.py"
+    bridge_wsl = f"{_WSL_HOME}/docs/research/dsh-cu-perceive/cu_dsh/inbox_bridge.py"
     body_json = json.dumps(body, ensure_ascii=False)
     r = _wsl_python(bridge_wsl, sid, body_json)
     if r.returncode != 0:

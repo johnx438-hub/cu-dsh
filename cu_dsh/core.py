@@ -36,7 +36,7 @@ def _weights_dir():
 
 
 def _skip_enikk_yolo(_img):
-    # Live YOLO is ScreenParser (cu_perceive.yolo). Do not probe dead Enikk icon_detect/model.onnx.
+    # Live YOLO is ScreenParser (cu_dsh.yolo). Do not probe dead Enikk icon_detect/model.onnx.
     return []
 
 
