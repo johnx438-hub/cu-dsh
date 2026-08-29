@@ -38,7 +38,14 @@ def _slim_win(w: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="cu-perceive")
+    # Console encoding: force UTF-8 so window titles / Chinese output never
+    # crash on cp1252 consoles (plain runs and the frozen exe alike).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    parser = argparse.ArgumentParser(prog="cu-dsh")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("perceive", help="window/screen -> 0-1000 grid map; OCR optional")
