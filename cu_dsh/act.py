@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -9,11 +10,21 @@ from . import config
 
 DEFAULT_OUT = config.shot_dir()
 
+# stamp is cu-generated (timestamp or short id): anchor it so a `../` can
+# never escape DEFAULT_OUT (path-traversal, cf. minimal's session-path-safe).
+_STAMP_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+
 
 def load_frame(stamp: str | None = None, json_path: str | None = None) -> tuple[dict, Path | None]:
     if json_path:
-        path = Path(json_path)
+        # Explicit frame path: confined to the shot dir (resolve + prefix check).
+        path = Path(json_path).resolve()
+        root = DEFAULT_OUT.resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"json_path escapes shot dir: {json_path!r}")
     elif stamp:
+        if not _STAMP_RE.fullmatch(stamp or ""):
+            raise ValueError(f"invalid stamp {stamp!r} (only [A-Za-z0-9._-], max 80)")
         path = DEFAULT_OUT / f"{stamp}.json"
     else:
         cands = list(DEFAULT_OUT.glob("*.json"))
