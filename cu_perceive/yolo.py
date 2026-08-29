@@ -5,7 +5,9 @@ from pathlib import Path
 
 import numpy as np
 
-WEIGHT = Path(r"C:\Users\jawn\src\cu-perceive\weights\screenparser\best.pt")
+from . import config
+
+WEIGHT = config.screenparser_weight()
 _model = None
 
 

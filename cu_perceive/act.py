@@ -5,7 +5,9 @@ import json
 import time
 from pathlib import Path
 
-DEFAULT_OUT = Path(r"C:\Users\jawn\agent-bus\archive\shots\perceive")
+from . import config
+
+DEFAULT_OUT = config.shot_dir()
 
 
 def load_frame(stamp: str | None = None, json_path: str | None = None) -> tuple[dict, Path | None]:

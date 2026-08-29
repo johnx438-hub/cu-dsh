@@ -19,11 +19,19 @@ MCP 的 `windows` / `perceive_window` 默认带一张压缩格子图（长边 12
 ## 跑法（CLI）
 
 ```
-PYTHONPATH=C:\Users\jawn\src\cu-perceive;C:\Users\jawn\src\enikk
-C:\Users\jawn\miniconda3\python.exe -m cu_perceive <cmd>
+python -m cu_perceive <cmd>          # 本机 python 已装依赖时
+bin/cu-perceive.sh <cmd>             # WSL 里调 Windows python（自定位，无需硬编码路径）
 ```
 
-出图：`C:\Users\jawn\agent-bus\archive\shots\perceive\`。给人看时读返回的 `map` 再附上。
+路径零硬编码（M1）：所有机器路径 = 环境变量覆盖 > 仓库布局推导。查解析结果：
+
+```
+python -m cu_perceive config
+```
+
+常用变量：`CU_ROOT`（仓库根）、`CU_ENIKK_ROOT`（OCR 引擎，默认 `<CU_ROOT>/vendor/enikk`）、`CU_SHOT_DIR`（出图目录，默认 `<CU_ROOT>/shots`，旧行为是 `C:\Users\jawn\agent-bus\archive\shots\perceive`，要保留就 export 它）、`CU_PYTHON`（`bin/cu-perceive.sh` 用的 Windows python，缺省探测 PATH）、`CU_WSL_DISTRO`（UNC 映射的发行版，默认 Ubuntu）。
+
+出图：默认 `<CU_SHOT_DIR>`（或 `--out`）。给人看时读返回的 `map` 再附上。
 
 ## 坐标
 
@@ -74,11 +82,13 @@ C:\Users\jawn\miniconda3\python.exe -m cu_perceive <cmd>
 
 ## WSL / Grok Build / minimal-agent-ts
 
-从 WSL 调 Windows 上的 Python（不要用 Linux python）：
+从 WSL 调 Windows 上的 Python（不要用 Linux python）。脚本自定位仓库根，解释器走 `CU_PYTHON` 或 PATH 里的 `python.exe`：
 
-    /mnt/c/Users/jawn/src/cu-perceive/bin/cu-perceive.sh windows
-    /mnt/c/Users/jawn/src/cu-perceive/bin/cu-perceive.sh perceive --hwnd N
-    /mnt/c/Users/jawn/src/cu-perceive/bin/cu-perceive.sh act --stamp STAMP --drag-norm ...
+```
+CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-perceive.sh windows
+./bin/cu-perceive.sh perceive --hwnd N
+./bin/cu-perceive.sh act --stamp STAMP --drag-norm ...
+```
 
 MCP 本机 loopback（不碰 8000 的 windows-mcp）：
 

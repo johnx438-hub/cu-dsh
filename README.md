@@ -1,10 +1,10 @@
 # cu-perceive
 
-Private dogfood on ARCHER. Pin one window, read the 0-1000 grid map, then act.
+Private dogfood. Pin one window, read the 0-1000 grid map, then act.
 
 One core, two faces:
 
-- CLI: `python -m cu_perceive perceive|windows|act`
+- CLI: `python -m cu_perceive perceive|windows|act|config`
 - MCP: `python -m cu_perceive mcp` -> http://127.0.0.1:8771/mcp (loopback only; do not bind 0.0.0.0)
 
 8766 may still listen as a leftover instance. Testers use **8771**.
@@ -14,23 +14,46 @@ One core, two faces:
 - The grid map is the map. Click / type / drag by `norm` (0-1000) or window `xy`.
 - OCR and YOLO are optional and off by default.
 - Actions default to dry-run. `--go` / `go=true` only when Shawn said so this turn.
-- Hardcoded `C:\Users\jawn\...` paths are expected on this machine for now.
+
+## Paths: zero hardcoded (M1)
+
+All machine paths resolve from **env override > repo-derived default** — no
+`C:\Users\...` anywhere in the code. Verify on any machine with:
+
+    python -m cu_perceive config
+
+| Env var | Default |
+|---|---|
+| `CU_ROOT` | this repo (derived from `__file__`) |
+| `CU_ENIKK_ROOT` | `<CU_ROOT>/vendor/enikk` (vendored OCR engine) |
+| `CU_SHOT_DIR` | `<CU_ROOT>/shots` |
+| `CU_APPS_JSON` | `<CU_ROOT>/apps.json` (+ per-user override `~/.config/cu-perceive/apps.json`, merged by name) |
+| `CU_SCREENPARSER_WEIGHT` | `<CU_ROOT>/weights/screenparser/best.pt` |
+| `CU_PYTHON` | PATH probe (`python.exe`) — used by `bin/cu-perceive.sh` |
+| `CU_WSL_DISTRO` | `Ubuntu` (UNC path mappings) |
+
+> Behavior change vs pre-M1: default shots moved from
+> `C:\Users\jawn\agent-bus\archive\shots\perceive` to `<CU_ROOT>/shots`.
+> Export `CU_SHOT_DIR` to the old path to keep old stamps discoverable.
 
 ## OCR / YOLO
 
-- OCR uses Enikk RapidOCR `UIParser` from the sibling checkout `C:\Users\jawn\src\enikk` (not vendored here).
-- YOLO is an optional extra (`--yolo` / `yolo=true`) via ScreenParser (`ultralytics` YOLO11-L). That extra is AGPL; keep it optional.
-- Weights are not in git. See `weights/README.md`.
+- OCR uses Enikk RapidOCR `UIParser`, **vendored** at `vendor/enikk/` (was a
+  sibling checkout). Set `CU_ENIKK_ROOT` to use an external checkout instead.
+- YOLO is an optional extra (`--yolo` / `yolo=true`) via ScreenParser
+  (`ultralytics` YOLO11-L). That extra is AGPL; keep it optional.
+- Weights are not in git (downloaded separately). See `weights/README.md` and
+  `vendor/enikk/weights/README.md`.
 
-## Run (ARCHER)
+## Run
 
-    PYTHONPATH=C:\Users\jawn\src\cu-perceive;C:\Users\jawn\src\enikk
-    C:\Users\jawn\miniconda3\python.exe -m cu_perceive windows
-    C:\Users\jawn\miniconda3\python.exe -m cu_perceive perceive --hwnd N
-    C:\Users\jawn\miniconda3\python.exe -m cu_perceive act --stamp STAMP
+    python -m cu_perceive windows
+    python -m cu_perceive perceive --hwnd N
+    python -m cu_perceive act --stamp STAMP
 
-Default shots: `C:\Users\jawn\agent-bus\archive\shots\perceive\`
+WSL wrapper (self-locating; Windows python from `CU_PYTHON` or PATH):
 
-WSL wrapper: `bin/cu-perceive.sh`
+    CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-perceive.sh windows
 
-See `SKILL.md` for the operator contract.
+See `SKILL.md` for the operator contract and `BINDINGS.md` for the
+de-hardcoding worklog (M1 done, M2+ pending).

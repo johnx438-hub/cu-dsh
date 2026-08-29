@@ -6,7 +6,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ENIKK_ROOT = Path(r"C:\Users\jawn\src\enikk")
+from . import config
+
+ENIKK_ROOT = config.enikk_root()
 if str(ENIKK_ROOT) not in sys.path:
     sys.path.insert(0, str(ENIKK_ROOT))
 
@@ -238,9 +240,10 @@ def windows_map(out_dir: str | None = None, rows: list[dict] | None = None) -> d
     import cv2
     import numpy as np
     from PIL import ImageGrab
-    from .core import DEFAULT_OUT, draw_grid
+    from .core import draw_grid
+    from .config import shot_dir
 
-    dest = Path(out_dir) if out_dir else DEFAULT_OUT
+    dest = Path(out_dir) if out_dir else shot_dir()
     dest.mkdir(parents=True, exist_ok=True)
     if rows is None:
         rows = list_windows(include_minimized=True)

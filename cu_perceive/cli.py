@@ -88,7 +88,13 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--host", default="127.0.0.1")
     m.add_argument("--port", type=int, default=8771)
 
+    sub.add_parser("config", help="print resolved path configuration as JSON (debug M1)")
+
     args = parser.parse_args(argv)
+    if args.cmd == "config":
+        from . import config
+        print(json.dumps(config.dump(), ensure_ascii=False, indent=2))
+        return 0
     if args.cmd == "perceive":
         from .core import perceive
         out = perceive(

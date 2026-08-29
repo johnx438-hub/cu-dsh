@@ -10,11 +10,10 @@ import cv2
 import numpy as np
 from PIL import ImageGrab
 
-ENIKK_ROOT = Path(r"C:\Users\jawn\src\enikk")
-DEFAULT_OUT = Path(r"C:\Users\jawn\agent-bus\archive\shots\perceive")
-WEIGHTS = ENIKK_ROOT / "weights"
-CU_WEIGHTS = Path(r"C:\Users\jawn\src\cu-perceive\weights")
+from . import config
 
+# OCR engine location + import path come from config (P2), never hardcoded.
+ENIKK_ROOT = config.enikk_root()
 if str(ENIKK_ROOT) not in sys.path:
     sys.path.insert(0, str(ENIKK_ROOT))
 
@@ -27,7 +26,7 @@ def _is_real_onnx(path: Path, min_bytes: int = 200000) -> bool:
 
 def _weights_dir():
     """cu-perceive/weights. RapidOCR official onnx lives here; skip dead Enikk YOLO."""
-    staged = CU_WEIGHTS
+    staged = config.cu_weights_dir()
     staged.mkdir(parents=True, exist_ok=True)
     det = staged / "rapidocr" / "ch_PP-OCRv4_det_infer.onnx"
     rec = staged / "rapidocr" / "ch_PP-OCRv4_rec_infer.onnx"
@@ -130,7 +129,7 @@ def perceive(
 ) -> dict:
     from .paths import attach_wsl, coerce_out_dir
     out_dir = coerce_out_dir(out_dir)
-    dest = Path(out_dir) if out_dir else DEFAULT_OUT
+    dest = Path(out_dir) if out_dir else config.shot_dir()
     dest.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     src = Path(image) if image else None

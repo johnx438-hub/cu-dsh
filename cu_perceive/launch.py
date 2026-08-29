@@ -1,18 +1,18 @@
 """Start an app by name (apps.json) or exe path. No secrets."""
 from __future__ import annotations
 
-import json
 import subprocess
 import time
 from pathlib import Path
 
-APPS = Path(r"C:\Users\jawn\src\cu-perceive\apps.json")
+from . import config
+
+APPS = config.apps_json()
 
 
 def list_apps() -> list[dict]:
-    if not APPS.exists():
-        return []
-    return json.loads(APPS.read_text(encoding="utf-8"))
+    """Merged list: package apps.json + per-user override (see config.load_apps)."""
+    return config.load_apps()
 
 
 def launch(app: str | None = None, exe: str | None = None) -> dict:
@@ -23,7 +23,7 @@ def launch(app: str | None = None, exe: str | None = None) -> dict:
                 rec = row
                 break
         if rec is None:
-            raise KeyError(f"app {app!r} not in {APPS}")
+            raise KeyError(f"app {app!r} not in {APPS} (or user override)")
         exe = rec.get("exe") or rec.get("app_path")
     if not exe:
         raise ValueError("launch needs --app or --exe")

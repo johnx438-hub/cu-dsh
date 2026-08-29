@@ -14,8 +14,15 @@ dependencies = [
   "numpy>=2.0.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 cu-perceive = "cu_perceive.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["cu_perceive"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
