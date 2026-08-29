@@ -15,7 +15,6 @@ persona=vision-buddy)`); point CU_VISION_SESSION at it.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
@@ -65,8 +64,10 @@ def shlex_quote(s: str) -> str:
 
 
 def vision_session_id() -> str:
-    """Explicit CU_VISION_SESSION wins; else the newest session dir."""
-    env = os.environ.get("CU_VISION_SESSION")
+    """Explicit config/env pin (CU_VISION_SESSION / [vision] session) wins;
+    else the newest session dir. Pinning avoids waking a session bound to a
+    different model (LM Studio would swap models in VRAM)."""
+    env = config.vision_session()
     if env:
         return env
     base = Path(_UNC_ROOT)

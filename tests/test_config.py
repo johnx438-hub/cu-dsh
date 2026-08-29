@@ -202,3 +202,16 @@ api_key_env = "DASHSCOPE_API_KEY"
     # direct CU_VISION_API_KEY beats api_key_env
     monkeypatch.setenv("CU_VISION_API_KEY", "sk-direct")
     assert config.vision_api_key() == "sk-direct"
+
+
+def test_vision_session_pin(monkeypatch, tmp_path):
+    # default: no pin -> None (auto-discover)
+    assert config.vision_session() is None
+    cfg = _write_config(tmp_path, '[vision]\nsession = "session-abc"\n')
+    monkeypatch.setenv("CU_CONFIG", str(cfg))
+    config.config_file.cache_clear()
+    config._toml.cache_clear()
+    assert config.vision_session() == "session-abc"
+    # env beats file
+    monkeypatch.setenv("CU_VISION_SESSION", "session-env")
+    assert config.vision_session() == "session-env"

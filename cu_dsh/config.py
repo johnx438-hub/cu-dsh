@@ -162,6 +162,14 @@ def vision_api_key() -> str | None:
     return None
 
 
+def vision_session() -> str | None:
+    """Pin the vision minion session id (config [vision] session /
+    CU_VISION_SESSION). Fixing it prevents describe from auto-discovering a
+    session bound to a DIFFERENT model — which would make LM Studio unload
+    the loaded model and load another one into VRAM."""
+    return _cfg("vision", "session")
+
+
 def _env_path(name: str, default: Path) -> Path:
     v = _env(name)
     return Path(v) if v else default
