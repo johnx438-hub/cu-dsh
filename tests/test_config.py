@@ -175,3 +175,30 @@ def test_missing_config_file_is_empty(monkeypatch, tmp_path):
     assert config.machine_allowlist() == []
     assert config.wsl_checkout() == "/home/archer/zerostack-analysis/minimal-agent-ts"
     assert config.tailscale_host() is None
+
+
+def test_vision_backend_config(monkeypatch, tmp_path):
+    # default backend is lmstudio
+    assert config.vision_backend() == "lmstudio"
+    assert config.vision_base_url() is None
+    assert config.vision_api_key() is None
+
+    cfg = _write_config(tmp_path, """
+[vision]
+backend = "openai"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+model = "qwen-vl-max"
+api_key_env = "DASHSCOPE_API_KEY"
+""")
+    monkeypatch.setenv("CU_CONFIG", str(cfg))
+    config.config_file.cache_clear()
+    config._toml.cache_clear()
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-test")
+    assert config.vision_backend() == "openai"
+    assert config.vision_base_url() == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert config.vision_model() == "qwen-vl-max"
+    # api_key_env resolves the named env var
+    assert config.vision_api_key() == "sk-test"
+    # direct CU_VISION_API_KEY beats api_key_env
+    monkeypatch.setenv("CU_VISION_API_KEY", "sk-direct")
+    assert config.vision_api_key() == "sk-direct"

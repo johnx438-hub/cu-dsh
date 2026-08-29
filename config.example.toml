@@ -24,3 +24,26 @@ nvm_bin = "/home/archer/.nvm/versions/node/v24.14.1/bin"
 # DSH session store path relative to the checkout, used to poll the vision
 # minion's reply.
 sessions_rel = "docs/research/dsh-spike/.dsh-home/sessions/--home-archer-zerostack-analysis-minimal-agent-ts-docs-research-dsh-cu-perceive--"
+
+[vision]
+# describe() backend: "lmstudio" (default — wake a local multimodal DSH
+# minion via the inbox bridge) or "openai" (any OpenAI-compatible vision
+# API; no local model needed).
+backend = "lmstudio"
+
+# --- only for backend = "openai" ----------------------------------------
+# qwen (Alibaba DashScope, OpenAI-compatible mode):
+#   base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+#   model = "qwen-vl-max"          # or qwen-vl-plus
+#   api_key_env = "DASHSCOPE_API_KEY"
+# doubao (Volcengine Ark, OpenAI-compatible):
+#   base_url = "https://ark.cn-beijing.volces.com/api/v3"
+#   model = "doubao-1-5-vision-pro-32k-250115"   # your endpoint/model id
+#   api_key_env = "ARK_API_KEY"
+# kimi (Moonshot):
+#   base_url = "https://api.moonshot.cn/v1"
+#   model = "moonshot-v1-8k-vision-preview"
+#   api_key_env = "MOONSHOT_API_KEY"
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# model = "qwen-vl-max"
+# api_key_env = "DASHSCOPE_API_KEY"

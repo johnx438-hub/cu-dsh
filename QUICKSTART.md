@@ -54,6 +54,27 @@ cu-dsh describe --hwnd N    # N = 窗口句柄；0 = 主屏
 
 把 `CU_VISION_SESSION` 指到你的多模态 DSH session（或用自动发现）。
 
+## 没有本地多模态?用云端视觉 API(可选)
+
+describe 的后端可配置:`[vision] backend`（或 `CU_VISION_BACKEND`）:
+
+- **`lmstudio`**（默认）— 唤醒本地多模态 DSH 小弟（上面第 4 步那套）
+- **`openai`** — 直调任意 OpenAI 兼容视觉 API（**qwen / 豆包 / kimi 都是**），
+  不需要本地模型、不需要 DSH 小弟：
+
+```toml
+# ~/.config/cu-dsh/config.toml
+[vision]
+backend = "openai"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # qwen 示例
+model = "qwen-vl-max"
+api_key_env = "DASHSCOPE_API_KEY"   # 或直接设 CU_VISION_API_KEY
+```
+
+豆包：`https://ark.cn-beijing.volces.com/api/v3`；kimi：
+`https://api.moonshot.cn/v1`。低频看屏幕时，云端按次付费通常比本地常驻
+27B 模型划算（详见 LICENSING/README 的门槛讨论）。
+
 ## 验证一切正常
 
 ```bash

@@ -119,6 +119,65 @@ def _latest_reply_text(session_id: str, seen: set) -> str | None:
     return latest
 
 
+def _describe_openai(
+    shot: dict,
+    task: str | None,
+    timeout: int,
+) -> dict:
+    """Vision via any OpenAI-compatible API (qwen / doubao / kimi / ...).
+
+    Backend config: [vision] backend = "openai" + base_url/model + key
+    (CU_VISION_API_KEY or [vision] api_key_env). No local multimodal model
+    or DSH minion needed — handy when screen-looking is sparse/on-demand.
+    """
+    import base64
+
+    base_url = config.vision_base_url()
+    model = config.vision_model()
+    api_key = config.vision_api_key()
+    if not base_url or not model or not api_key:
+        raise RuntimeError(
+            "vision backend 'openai' needs [vision] base_url/model/api_key_env "
+            "(or CU_VISION_BASE_URL / CU_VISION_MODEL / CU_VISION_API_KEY)"
+        )
+    image = shot.get("map") or shot.get("json") or ""
+    prompt = (task or DEFAULT_TASK).format(path=image)
+    endpoint = base_url.rstrip("/") + "/chat/completions"
+
+    import urllib.request
+
+    b64 = base64.b64encode(Path(image).read_bytes()).decode()
+    body = {
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ],
+        }],
+        "max_tokens": 1024,
+    }
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        text = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"vision API response shape unexpected: {str(data)[:200]}") from exc
+    return {
+        "stamp": shot.get("stamp", ""),
+        "session": f"openai:{model}",
+        "image": image,
+        "description": str(text or "").strip(),
+        "backend": "openai",
+    }
+
+
 def describe(
     hwnd: int,
     task: str | None = None,
@@ -126,10 +185,18 @@ def describe(
     timeout: int = 240,
     out_dir: str | None = None,
 ) -> dict:
-    """Shot the window, wake the vision minion, return its description."""
+    """Shot the window, then describe it through the configured vision backend.
+
+    backend 'lmstudio' (default): wake a local multimodal DSH minion via the
+    inbox bridge and poll its reply. backend 'openai': call any
+    OpenAI-compatible vision API (qwen / doubao / kimi / ...) directly.
+    """
+    shot = perceive(hwnd=hwnd, out_dir=out_dir)
+    if config.vision_backend() != "lmstudio":
+        return _describe_openai(shot, task, timeout)
+
     import zstandard  # noqa: F401  (probe availability early)
 
-    shot = perceive(hwnd=hwnd, out_dir=out_dir)
     image = shot.get("map") or shot.get("json") or ""
     sid = session_id or vision_session_id()
     body = (task or DEFAULT_TASK).format(path=image)
@@ -156,6 +223,7 @@ def describe(
                 "session": sid,
                 "image": image,
                 "description": text.strip(),
+                "backend": "lmstudio",
             }
         time.sleep(5)
     raise TimeoutError(f"vision minion {sid} did not reply within {timeout}s")

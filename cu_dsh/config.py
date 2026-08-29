@@ -130,6 +130,38 @@ def wsl_sessions_rel() -> str:
     )
 
 
+def vision_backend() -> str:
+    """describe() backend: 'lmstudio' (default, inbox-bridge to a local
+    multimodal DSH minion) or 'openai' (any OpenAI-compatible vision API:
+    qwen / doubao / kimi / ...). Config [vision] backend / CU_VISION_BACKEND."""
+    v = _cfg("vision", "backend")
+    return (v or "lmstudio").lower()
+
+
+def vision_base_url() -> str | None:
+    """OpenAI-compatible base URL for the 'openai' backend
+    (config [vision] base_url / CU_VISION_BASE_URL)."""
+    return _cfg("vision", "base_url")
+
+
+def vision_model() -> str | None:
+    """Vision model id for the 'openai' backend
+    (config [vision] model / CU_VISION_MODEL)."""
+    return _cfg("vision", "model")
+
+
+def vision_api_key() -> str | None:
+    """API key for the 'openai' backend. CU_VISION_API_KEY beats the key named
+    by config [vision] api_key_env (which is read from the process env)."""
+    direct = _env("CU_VISION_API_KEY")
+    if direct is not None:
+        return direct
+    ref = _cfg("vision", "api_key_env")
+    if ref:
+        return _env(ref)
+    return None
+
+
 def _env_path(name: str, default: Path) -> Path:
     v = _env(name)
     return Path(v) if v else default
@@ -267,6 +299,9 @@ def dump() -> dict:
         "wsl_sessions_rel": wsl_sessions_rel(),
         "machine_allowlist": machine_allowlist(),
         "tailscale_host": tailscale_host(),
+        "vision_backend": vision_backend(),
+        "vision_base_url": vision_base_url(),
+        "vision_model": vision_model(),
         "config_file": p(config_file()),
         "cu_python": cu_python(),
         "apps_count": len(load_apps()),
