@@ -90,10 +90,30 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("config", help="print resolved path configuration as JSON (debug M1)")
 
+    d = sub.add_parser("describe", help="shot a window and have the vision minion describe it")
+    d.add_argument("--hwnd", type=int, help="window handle to pin and shoot (0 = primary screen)")
+    d.add_argument("--title", help="pin window by title substring")
+    d.add_argument("--exe", help="pin window by executable name")
+    d.add_argument("--task", help="custom task text ({path} = shot path)")
+    d.add_argument("--session", help="vision minion session id (default CU_VISION_SESSION / newest)")
+    d.add_argument("--timeout", type=int, default=240, help="seconds to wait for the reply")
+    d.add_argument("--out", help="shot output dir (default CU_SHOT_DIR)")
+
     args = parser.parse_args(argv)
     if args.cmd == "config":
         from . import config
         print(json.dumps(config.dump(), ensure_ascii=False, indent=2))
+        return 0
+    if args.cmd == "describe":
+        from .vision import describe
+        out = describe(
+            hwnd=args.hwnd or 0,
+            task=args.task,
+            session_id=args.session,
+            timeout=args.timeout,
+            out_dir=args.out,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
         return 0
     if args.cmd == "perceive":
         from .core import perceive
