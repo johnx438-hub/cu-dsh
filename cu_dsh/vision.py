@@ -29,6 +29,14 @@ DEFAULT_TASK = (
     "截图在: {path}"
 )
 
+# OpenAI-compatible backend: the image is ALREADY inline (image_url), so the
+# prompt must not ask for a read_image tool call (kimi correctly replied it
+# has none; the shot is already attached).
+OPENAI_TASK = (
+    "用中文详细描述这张截图画面内容(这是什么界面?有哪些可见元素:"
+    "标题、按钮、列表、状态等)。基于画面事实,不要编造。"
+)
+
 # WSL-side layout comes from config (M2): [wsl] checkout / sessions_rel /
 # nvm_bin, env CU_WSL_* overrides; defaults match the original deployment.
 _WSL_HOME = config.wsl_checkout()
@@ -142,7 +150,7 @@ def _describe_openai(
             "(or CU_VISION_BASE_URL / CU_VISION_MODEL / CU_VISION_API_KEY)"
         )
     image = shot.get("map") or shot.get("json") or ""
-    prompt = (task or DEFAULT_TASK).format(path=image)
+    prompt = task if task else OPENAI_TASK
     endpoint = base_url.rstrip("/") + "/chat/completions"
 
     import urllib.request
@@ -167,7 +175,8 @@ def _describe_openai(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     try:
-        text = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        text = msg.get("content") or msg.get("reasoning_content") or ""
     except (KeyError, IndexError, TypeError) as exc:
         raise RuntimeError(f"vision API response shape unexpected: {str(data)[:200]}") from exc
     return {
