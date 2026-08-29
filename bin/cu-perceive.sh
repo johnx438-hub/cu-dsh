@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run cu-perceive on Windows Python from WSL (or Windows bash).
+# Run cu-perceive from WSL (or Linux bash) on a Windows python.
 # Zero hardcoded paths (M1): CU_ROOT derives from this script's location;
 # the interpreter comes from CU_PYTHON or PATH.
 set -euo pipefail
@@ -20,21 +20,12 @@ if [[ -z "$PY" ]]; then
   fi
 fi
 
-# 2. PYTHONPATH in the interpreter's own path space: translate Linux repo
-#    paths (WSL view) to Windows paths when the interpreter is a Windows exe.
-win() {
-  local p="$1"
-  case "$p" in
-    /*)
-      case "$PY" in
-        *.exe|/mnt/*)
-          if command -v wslpath >/dev/null 2>&1; then wslpath -w "$p"; else echo "$p"; fi ;;
-        *) echo "$p" ;;
-      esac ;;
-    *) echo "$p" ;;
-  esac
-}
-
-export PYTHONPATH="$(win "$CU_ROOT");$(win "$CU_ROOT/vendor/enikk")"
+# 2. Env passing to a Windows process: WSL interop does NOT forward Linux env
+#    vars unless they are listed in WSLENV. PYTHONPATH stays in Linux form
+#    (colon-separated); the "/p" flag makes WSL convert it to Windows form
+#    (semicolon-separated, /mnt/c -> C:\\) at spawn. Plain Linux pythons just
+#    read the colon form directly, so one export serves both.
+export PYTHONPATH="$CU_ROOT:$CU_ROOT/vendor/enikk"
 export PYTHONIOENCODING=utf-8
+export WSLENV="PYTHONPATH/p:PYTHONIOENCODING${WSLENV:+:$WSLENV}"
 exec "$PY" -m cu_perceive "$@"
