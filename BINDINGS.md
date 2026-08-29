@@ -70,6 +70,7 @@ Linux 可跑，不依赖 Windows）。
 - [x] M0：搬入独立工作区 + vendor enikk + 绑定清点
 - [x] M1：路径配置化（P1–P6 → env/配置文件），代码零硬编码
 - [x] M2：机器名/用户绑定去除（→ config.toml 配置化）
-- [ ] M3：Windows 侧构建链独立（enikk exe + cu-dsh exe）
+- [x] M3：Windows 侧构建链独立（cu-dsh.exe，PyInstaller onedir + LICENSES 注入）
+- [ ] M4：发布形态（GitHub Releases 已开；DSH 插件社区 npm 包装待定）
 - [ ] M4：发布形态（MCP server vs cordis 插件）定稿 + 泛化文档
 - [ ] M5：社区发布（npm/GitHub/dsh-plugin topic，复用 A/B 的发布链路）
