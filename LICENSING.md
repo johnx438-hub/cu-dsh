@@ -11,7 +11,7 @@ texts ship **with the binary**, not just in the source repo.
 |---|---|---|---|
 | cu-dsh (this repo) | MIT (see LICENSE) | yes | keep copyright notice |
 | enikk (vendored OCR engine) | MIT | yes | **license text must ship with the exe** (`--add-data LICENSES/`) |
-| rapidocr ONNX (weights) | Apache-2.0 (code); **weights: verify source** | yes (engine) / weights on disk | ⚠️ see TODO below |
+| rapidocr ONNX (weights) | **Apache-2.0** (verified: PaddleOCR → ONNX, HF PP-OCR ONNX Models) | yes (engine) / weights on disk | keep notice |
 | mcp / pillow / numpy | MIT / CMU / BSD | yes | keep notices |
 | opencv-python | wheel MIT; **OpenCV core Apache-2.0 since 4.5.2** (BSD before; never LGPL) | yes | keep Apache-2.0 NOTICE (no LGPL-style dynamic-link obligations) |
 | ultralytics (YOLO inference) | **AGPL** | **never** | do not import; YOLO runs via onnxruntime + raw weights |
@@ -40,10 +40,11 @@ texts ship **with the binary**, not just in the source repo.
 
 ## TODO (verify before first public release)
 
-- [ ] rapidocr ONNX **weights** redistribution license: check the RapidAI
-      model download pages / original PaddleOCR sources. The code is
-      Apache-2.0; the converted ONNX weights are a separate question (do not
-      assume the code license covers them).
+- [x] rapidocr ONNX **weights** redistribution license: verified **Apache-2.0**
+      — source is PaddleOCR converted to ONNX (paddle2onnx); HF
+      [Kiuyha/paddleocr-onnx](https://huggingface.co/Kiuyha/paddleocr-onnx)
+      and PaddlePaddle's PP-OCR collections state Apache-2.0 incl. commercial
+      use. The code license does cover the weights here; keep the notice.
 - [ ] enikk: confirm upstream repo + that vendoring under MIT is complete
       (copyright lines preserved in vendor/enikk/LICENSE).
 - [ ] openseadragon/other frontend assets in vendor/enikk (if any) — sweep
