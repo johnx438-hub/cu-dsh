@@ -64,4 +64,7 @@ WSL wrapper (self-locating; Windows python from `CU_PYTHON` or PATH):
     CU_PYTHON=/mnt/c/Users/you/miniconda3/python.exe ./bin/cu-dsh.sh windows
 
 See `SKILL.md` for the operator contract and `BINDINGS.md` for the
-de-hardcoding worklog (M1 done, M2+ pending).
+de-hardcoding worklog (M1-M3 done, M4 pending).
+
+**New here? Start with `QUICKSTART.md`** — 5-minute setup to shot a window
+and have a local multimodal model describe it (`cu-dsh describe`).

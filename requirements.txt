@@ -1,0 +1,5 @@
+mcp>=1.19.0
+pillow>=11.2.0
+opencv-python>=4.10.0
+numpy>=2.0.0
+zstandard>=0.24
