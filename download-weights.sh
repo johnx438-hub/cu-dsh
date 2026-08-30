@@ -4,7 +4,8 @@
 # converted), ScreenParser best.pt has no explicit redistribution license so
 # it is fetched from its upstream project and never bundled.
 #
-# Usage:  ./download-weights.sh [--screenparser] [--rapidocr]   (default: all)
+# Usage:  ./download-weights.sh [--screenparser] [--rapidocr] [--dry-run]   (default: all)
+#   --dry-run: list which weights would be downloaded, without downloading.
 # Run from the repo root (or set CU_ROOT).
 set -euo pipefail
 
@@ -30,6 +31,10 @@ dl() { # dl <url> <dest>
     echo "  already present: $dest"
     return 0
   fi
+  if [[ "$dry_run" == 1 ]]; then
+    echo "  would download: $dest"
+    return 0
+  fi
   echo "  downloading $dest"
   mkdir -p "$(dirname "$dest")"
   if command -v curl >/dev/null 2>&1; then
@@ -39,11 +44,12 @@ dl() { # dl <url> <dest>
   fi
 }
 
-want_rapidocr=1 want_screenparser=1
+want_rapidocr=1 want_screenparser=1 dry_run=0
 for arg in "$@"; do
   case "$arg" in
     --rapidocr) want_screenparser=0 ;;
     --screenparser) want_rapidocr=0 ;;
+    --dry-run) dry_run=1 ;;
   esac
 done
 
@@ -61,4 +67,8 @@ if [[ "$want_screenparser" == 1 ]]; then
   dl "$SCREENPARSER_URL" "$WEIGHTS/screenparser/best.pt"
 fi
 
-echo "done. See weights/README.md for layout + license notes."
+if [[ "$dry_run" == 1 ]]; then
+  echo "done. (dry-run: no files were downloaded)"
+else
+  echo "done. See weights/README.md for layout + license notes."
+fi
